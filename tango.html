@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dawn Forager Prototype</title>
+    <script src="https://cdn.jsdelivr.net/npm/phaser@3.55.2/dist/phaser.min.js"></script>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #1a1a2e;
+            color: #e6e6e6;
+            font-family: 'Courier New', monospace;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            overflow: hidden;
+        }
+        #game-container {
+            border: 2px solid #4cc9f0;
+            border-radius: 5px;
+            box-shadow: 0 0 15px rgba(76, 201, 240, 0.5);
+        }
+        #ui {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 10px;
+            border-radius: 5px;
+        }
+        .resource {
+            margin: 5px 0;
+            display: flex;
+            align-items: center;
+        }
+        .resource-icon {
+            width: 16px;
+            height: 16px;
+            margin-right: 5px;
+        }
+        #crafting-menu {
+            position: absolute;
+            bottom: 10px;
+            left: 10px;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 10px;
+            border-radius: 5px;
+            display: none;
+        }
+        .craft-item {
+            margin: 5px;
+            padding: 5px;
+            border: 1px solid #4cc9f0;
+            border-radius: 3px;
+            cursor: pointer;
+        }
+        .craft-item:hover {
+            background: rgba(76, 201, 240, 0.2);
+        }
+        #day-night-indicator {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            padding: 10px;
+            border-radius: 50%;
+            width: 20px;
+            height: 20px;
+        }
+        .day {
+            background: #ffce00;
+            box-shadow: 0 0 15px #ffce00;
+        }
+        .night {
+            background: #4361ee;
+            box-shadow: 0 0 15px #4361ee;
+        }
+    </style>
+</head>
+<body>
+    <div id="game-container"></div>
+    <div id="ui">
+        <h2>Dawn Forager</h2>
+        <div class="resource">
+            <div class="resource-icon" style="background-color: #966F33;"></div>
+            <span id="wood-count">100</span> Madera
+        </div>
+        <div class="resource">
+            <div class="resource-icon" style="background-color: #7D7D7D;"></div>
+            <span id="stone-count">50</span> Piedra
+        </div>
+        <div id="day-night-indicator" class="day"></div>
+        <div id="time-text">Día: 1 | 06:00</div>
+    </div>
+    <div id="crafting-menu">
+        <h3>Construir</h3>
+        <div class="craft-item" onclick="craftStructure('wall')">Muro (10 madera)</div>
+        <div class="craft-item" onclick="craftStructure('tower')">Torre (20 madera, 10 piedra)</div>
+        <div class="craft-item" onclick="craftStructure('fire')">Fogata (15 madera, 5 piedra)</div>
+    </div>
+
+    <script>
+        // Configuración básica del juego
+        const config = {
+            type: Phaser.AUTO,
+            width: 800,
+            height: 600,
+            parent: 'game-container',
+            physics: {
+                default: 'arcade',
+                arcade: {
+                    gravity: { y: 0 },
+                    debug: false
+                }
+            },
+            scene: {
+                preload: preload,
+                create: create,
+                update: update
+            }
+        };
+
+        // Variables del juego
+        let player;
+        let cursors;
+        let resources = { wood: 100, stone: 50 };
+        let structures = [];
+        let enemies = [];
+        let bullets = [];
+        let isDay = true;
+        let dayCount = 1;
+        let gameTime = 360; // 06:00 en segundos absolutos
+        let craftMode = false;
+
+        // Inicializar el juego
+        const game = new Phaser.Game(config);
+
+        function preload() {
+            // Cargar assets simples (en un juego real, cargarías imágenes)
+            this.load.image('player', 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 20 20"><circle cx="10" cy="10" r="8" fill="%234cc9f0"/></svg>');
+            this.load.image('tree', 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="30" height="40" viewBox="0 0 30 40"><rect x="12" y="25" width="6" height="15" fill="%23755C48"/><path d="M15,5 Q0,25 15,35 Q30,25 15,5" fill="%23297045"/></svg>');
+            this.load.image('rock', 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="25" height="20" viewBox="0 0 25 20"><path d="M5,15 Q0,10 5,5 Q10,0 15,5 Q20,0 25,5 Q20,10 25,15 Q20,20 15,15 Q10,20 5,15" fill="%237D7D7D"/></svg>');
+            this.load.image('enemy', 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 20 20"><circle cx="10" cy="10" r="8" fill="%23f72585"/></svg>');
+            this.load.image('bullet', 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 10 10"><circle cx="5" cy="5" r="4" fill="%23ffce00"/></svg>');
+        }
+
+        function create() {
+            // Crear jugador
+            player = this.add.circle(400, 300, 10, 0x4cc9f0);
+            this.physics.add.existing(player);
+            player.body.setCollideWorldBounds(true);
+
+            // Controles
+            cursors = this.input.keyboard.createCursorKeys();
+            let keyC = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.C);
+            keyC.on('down', () => {
+                craftMode = !craftMode;
+                document.getElementById('crafting-menu').style.display = craftMode ? 'block' : 'none';
+            });
+
+            // Generar recursos
+            generateResources(this);
+
+            // Ciclo día/noche
+            updateTimeDisplay();
+            setInterval(updateGameTime, 1000);
+        }
+
+        function update() {
+            if (!craftMode) {
+                handlePlayerMovement();
+            }
+
+            // Disparar con clic del mouse
+            if (this.input.activePointer.isDown && !craftMode) {
+                shootBullet(this);
+            }
+
+            // Actualizar balas
+            updateBullets(this);
+        }
+
+        function handlePlayerMovement() {
+            player.body.setVelocity(0);
+
+            if (cursors.left.isDown) {
+                player.body.setVelocityX(-160);
+            } else if (cursors.right.isDown) {
+                player.body.setVelocityX(160);
+            }
+
+            if (cursors.up.isDown) {
+                player.body.setVelocityY(-160);
+            } else if (cursors.down.isDown) {
+                player.body.setVelocityY(160);
+            }
+        }
+
+        function shootBullet(scene) {
+            // Implementación básica de disparo
+            let pointer = scene.input.activePointer;
+            let angle = Phaser.Math.Angle.Between(player.x, player.y, pointer.worldX, pointer.worldY);
+            
+            let bullet = scene.add.circle(player.x, player.y, 4, 0xffce00);
+            scene.physics.add.existing(bullet);
+            scene.physics.moveTo(bullet, pointer.worldX, pointer.worldY, 300);
+            bullets.push(bullet);
+        }
+
+        function updateBullets(scene) {
+            // Actualizar posición de balas y eliminar las que salen de pantalla
+            for (let i = bullets.length - 1; i >= 0; i--) {
+                let bullet = bullets[i];
+                if (bullet.x < 0 || bullet.x > 800 || bullet.y < 0 || bullet.y > 600) {
+                    bullet.destroy();
+                    bullets.splice(i, 1);
+                }
+            }
+        }
+
+        function generateResources(scene) {
+            // Generar árboles
+            for (let i = 0; i < 15; i++) {
+                let x = Phaser.Math.Between(50, 750);
+                let y = Phaser.Math.Between(50, 550);
+                let tree = scene.add.rectangle(x, y, 30, 40, 0x297045);
+                scene.physics.add.existing(tree, true);
+            }
+
+            // Generar rocas
+            for (let i = 0; i < 10; i++) {
+                let x = Phaser.Math.Between(50, 750);
+                let y = Phaser.Math.Between(50, 550);
+                let rock = scene.add.rectangle(x, y, 25, 20, 0x7D7D7D);
+                scene.physics.add.existing(rock, true);
+            }
+        }
+
+        function updateGameTime() {
+            gameTime += 1;
+            
+            // 10 segundos de día = 1 minuto de juego
+            let dayDuration = 600; // 10 minutos en segundos reales
+            let nightDuration = 300; // 5 minutos en segundos reales
+            
+            if (isDay && gameTime % dayDuration === 0) {
+                isDay = false;
+                startNight();
+            } else if (!isDay && gameTime % nightDuration === 0) {
+                isDay = true;
+                dayCount++;
+                endNight();
+            }
+            
+            updateTimeDisplay();
+        }
+
+        function startNight() {
+            document.getElementById('day-night-indicator').className = 'night';
+            spawnEnemies();
+        }
+
+        function endNight() {
+            document.getElementById('day-night-indicator').className = 'day';
+            // Eliminar enemigos
+            enemies.forEach(enemy => enemy.destroy());
+            enemies = [];
+        }
+
+        function spawnEnemies() {
+            // Generar enemigos alrededor del mapa
+            for (let i = 0; i < 5 + dayCount; i++) {
+                let side = Phaser.Math.Between(0, 3);
+                let x, y;
+                
+                if (side === 0) { x = -20; y = Phaser.Math.Between(0, 600); }
+                else if (side === 1) { x = 820; y = Phaser.Math.Between(0, 600); }
+                else if (side === 2) { x = Phaser.Math.Between(0, 800); y = -20; }
+                else { x = Phaser.Math.Between(0, 800); y = 620; }
+                
+                let enemy = game.scene.scenes[0].add.circle(x, y, 10, 0xf72585);
+                game.scene.scenes[0].physics.add.existing(enemy);
+                enemies.push(enemy);
+                
+                // Movimiento hacia el jugador
+                game.scene.scenes[0].physics.moveToObject(enemy, player, 50);
+            }
+        }
+
+        function updateTimeDisplay() {
+            let totalSeconds = gameTime % 600;
+            let minutes = Math.floor(totalSeconds / 60);
+            let seconds = totalSeconds % 60;
+            let timeString = `${isDay ? 'Día' : 'Noche'}: ${dayCount} | ${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+            document.getElementById('time-text').textContent = timeString;
+        }
+
+        function craftStructure(type) {
+            // Lógica básica de construcción
+            let cost = {};
+            switch(type) {
+                case 'wall':
+                    cost = { wood: 10 };
+                    break;
+                case 'tower':
+                    cost = { wood: 20, stone: 10 };
+                    break;
+                case 'fire':
+                    cost = { wood: 15, stone: 5 };
+                    break;
+            }
+            
+            // Verificar recursos
+            if (resources.wood >= cost.wood && resources.stone >= (cost.stone || 0)) {
+                resources.wood -= cost.wood;
+                resources.stone -= cost.stone || 0;
+                updateResourceDisplay();
+                
+                // Aquí iría la lógica para colocar la estructura en el mundo
+                alert(`Construyendo ${type}. Colócalo en el mundo.`);
+            } else {
+                alert('No tienes suficientes recursos');
+            }
+        }
+
+        function updateResourceDisplay() {
+            document.getElementById('wood-count').textContent = resources.wood;
+            document.getElementById('stone-count').textContent = resources.stone;
+        }
+
+        // Exponer funciones globales para la UI
+        window.craftStructure = craftStructure;
+    </script>
+</body>
+</html>

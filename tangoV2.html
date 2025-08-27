@@ -1,0 +1,477 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dawn Forager</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #1a1a2e;
+            color: #e6e6e6;
+            font-family: 'Courier New', monospace;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            overflow: hidden;
+        }
+        #game-container {
+            position: relative;
+            border: 2px solid #4cc9f0;
+            border-radius: 5px;
+            box-shadow: 0 0 15px rgba(76, 201, 240, 0.5);
+            overflow: hidden;
+        }
+        canvas {
+            display: block;
+            background-color: #0d1b2a;
+        }
+        #ui {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 10px;
+            border-radius: 5px;
+            z-index: 10;
+        }
+        .resource {
+            margin: 5px 0;
+            display: flex;
+            align-items: center;
+        }
+        .resource-icon {
+            width: 16px;
+            height: 16px;
+            margin-right: 5px;
+            border-radius: 50%;
+        }
+        #day-night-indicator {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            padding: 10px;
+            border-radius: 50%;
+            width: 20px;
+            height: 20px;
+            z-index: 10;
+        }
+        .day {
+            background: #ffce00;
+            box-shadow: 0 0 15px #ffce00;
+        }
+        .night {
+            background: #4361ee;
+            box-shadow: 0 0 15px #4361ee;
+        }
+        #crafting-menu {
+            position: absolute;
+            bottom: 10px;
+            left: 10px;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 10px;
+            border-radius: 5px;
+            z-index: 10;
+        }
+        .craft-item {
+            margin: 5px;
+            padding: 5px;
+            border: 1px solid #4cc9f0;
+            border-radius: 3px;
+            cursor: pointer;
+        }
+        .craft-item:hover {
+            background: rgba(76, 201, 240, 0.2);
+        }
+        #instructions {
+            margin-top: 20px;
+            text-align: center;
+            max-width: 800px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Dawn Forager</h1>
+    <div id="game-container">
+        <canvas id="gameCanvas" width="800" height="600"></canvas>
+        <div id="ui">
+            <div class="resource">
+                <div class="resource-icon" style="background-color: #966F33;"></div>
+                <span id="wood-count">100</span> Madera
+            </div>
+            <div class="resource">
+                <div class="resource-icon" style="background-color: #7D7D7D;"></div>
+                <span id="stone-count">50</span> Piedra
+            </div>
+            <div id="time-text">Día: 1 | 06:00</div>
+        </div>
+        <div id="day-night-indicator" class="day"></div>
+        <div id="crafting-menu">
+            <h3>Construir (Presiona C)</h3>
+            <div class="craft-item" onclick="craftStructure('wall')">Muro (10 madera)</div>
+            <div class="craft-item" onclick="craftStructure('tower')">Torre (20 madera, 10 piedra)</div>
+            <div class="craft-item" onclick="craftStructure('fire')">Fogata (15 madera, 5 piedra)</div>
+        </div>
+    </div>
+    <div id="instructions">
+        <p>Controles: Flechas para moverse | Click para disparar | C para abrir/cerrar menú de construcción</p>
+    </div>
+
+    <script>
+        // Variables del juego
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        let player = { x: 400, y: 300, radius: 15, color: '#4cc9f0', speed: 5 };
+        let resources = { wood: 100, stone: 50 };
+        let trees = [];
+        let rocks = [];
+        let enemies = [];
+        let bullets = [];
+        let structures = [];
+        let isDay = true;
+        let dayCount = 1;
+        let gameTime = 360; // 06:00 en segundos absolutos
+        let craftMode = false;
+        let keys = {};
+        let mouse = { x: 0, y: 0, down: false };
+
+        // Inicializar recursos del juego
+        function initGame() {
+            // Crear árboles
+            for (let i = 0; i < 15; i++) {
+                trees.push({
+                    x: Math.random() * 700 + 50,
+                    y: Math.random() * 500 + 50,
+                    width: 30,
+                    height: 40,
+                    color: '#297045'
+                });
+            }
+
+            // Crear rocas
+            for (let i = 0; i < 10; i++) {
+                rocks.push({
+                    x: Math.random() * 700 + 50,
+                    y: Math.random() * 500 + 50,
+                    width: 25,
+                    height: 20,
+                    color: '#7D7D7D'
+                });
+            }
+
+            // Iniciar bucle del juego
+            gameLoop();
+            
+            // Iniciar temporizador del juego
+            setInterval(updateGameTime, 1000);
+        }
+
+        // Bucle principal del juego
+        function gameLoop() {
+            update();
+            render();
+            requestAnimationFrame(gameLoop);
+        }
+
+        // Actualizar el estado del juego
+        function update() {
+            // Movimiento del jugador
+            if (keys['ArrowUp']) player.y -= player.speed;
+            if (keys['ArrowDown']) player.y += player.speed;
+            if (keys['ArrowLeft']) player.x -= player.speed;
+            if (keys['ArrowRight']) player.x += player.speed;
+            
+            // Mantener al jugador dentro de los límites
+            player.x = Math.max(player.radius, Math.min(canvas.width - player.radius, player.x));
+            player.y = Math.max(player.radius, Math.min(canvas.height - player.radius, player.y));
+            
+            // Disparar
+            if (mouse.down && !craftMode) {
+                shootBullet();
+                mouse.down = false;
+            }
+            
+            // Actualizar balas
+            updateBullets();
+            
+            // Actualizar enemigos
+            updateEnemies();
+        }
+
+        // Renderizar el juego
+        function render() {
+            // Limpiar canvas
+            ctx.fillStyle = '#0d1b2a';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            // Dibujar recursos
+            trees.forEach(tree => {
+                ctx.fillStyle = tree.color;
+                ctx.fillRect(tree.x - tree.width/2, tree.y - tree.height/2, tree.width, tree.height);
+            });
+            
+            rocks.forEach(rock => {
+                ctx.fillStyle = rock.color;
+                ctx.fillRect(rock.x - rock.width/2, rock.y - rock.height/2, rock.width, rock.height);
+            });
+            
+            // Dibujar estructuras
+            structures.forEach(structure => {
+                ctx.fillStyle = structure.color;
+                ctx.fillRect(structure.x - structure.width/2, structure.y - structure.height/2, structure.width, structure.height);
+            });
+            
+            // Dibujar enemigos
+            enemies.forEach(enemy => {
+                ctx.fillStyle = enemy.color;
+                ctx.beginPath();
+                ctx.arc(enemy.x, enemy.y, enemy.radius, 0, Math.PI * 2);
+                ctx.fill();
+            });
+            
+            // Dibujar balas
+            bullets.forEach(bullet => {
+                ctx.fillStyle = bullet.color;
+                ctx.beginPath();
+                ctx.arc(bullet.x, bullet.y, bullet.radius, 0, Math.PI * 2);
+                ctx.fill();
+            });
+            
+            // Dibujar jugador
+            ctx.fillStyle = player.color;
+            ctx.beginPath();
+            ctx.arc(player.x, player.y, player.radius, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Dibujar mira
+            if (!craftMode) {
+                ctx.strokeStyle = '#ffffff';
+                ctx.lineWidth = 1;
+                ctx.beginPath();
+                ctx.arc(mouse.x, mouse.y, 5, 0, Math.PI * 2);
+                ctx.stroke();
+            }
+        }
+
+        // Disparar una bala
+        function shootBullet() {
+            let dx = mouse.x - player.x;
+            let dy = mouse.y - player.y;
+            let distance = Math.sqrt(dx * dx + dy * dy);
+            dx /= distance;
+            dy /= distance;
+            
+            bullets.push({
+                x: player.x,
+                y: player.y,
+                radius: 5,
+                color: '#ffce00',
+                speed: 10,
+                dx: dx,
+                dy: dy
+            });
+        }
+
+        // Actualizar posición de las balas
+        function updateBullets() {
+            for (let i = bullets.length - 1; i >= 0; i--) {
+                let bullet = bullets[i];
+                bullet.x += bullet.dx * bullet.speed;
+                bullet.y += bullet.dy * bullet.speed;
+                
+                // Eliminar balas fuera de pantalla
+                if (bullet.x < 0 || bullet.x > canvas.width || bullet.y < 0 || bullet.y > canvas.height) {
+                    bullets.splice(i, 1);
+                    continue;
+                }
+                
+                // Detectar colisiones con enemigos
+                for (let j = enemies.length - 1; j >= 0; j--) {
+                    let enemy = enemies[j];
+                    let dx = bullet.x - enemy.x;
+                    let dy = bullet.y - enemy.y;
+                    let distance = Math.sqrt(dx * dx + dy * dy);
+                    
+                    if (distance < bullet.radius + enemy.radius) {
+                        enemies.splice(j, 1);
+                        bullets.splice(i, 1);
+                        break;
+                    }
+                }
+            }
+        }
+
+        // Actualizar enemigos
+        function updateEnemies() {
+            for (let i = enemies.length - 1; i >= 0; i--) {
+                let enemy = enemies[i];
+                
+                // Movimiento hacia el jugador
+                let dx = player.x - enemy.x;
+                let dy = player.y - enemy.y;
+                let distance = Math.sqrt(dx * dx + dy * dy);
+                dx /= distance;
+                dy /= distance;
+                
+                enemy.x += dx * enemy.speed;
+                enemy.y += dy * enemy.speed;
+                
+                // Detectar colisión con el jugador
+                if (distance < player.radius + enemy.radius) {
+                    // Aquí iría la lógica de daño al jugador
+                    enemies.splice(i, 1);
+                }
+            }
+        }
+
+        // Generar enemigos
+        function spawnEnemies() {
+            for (let i = 0; i < 5 + dayCount; i++) {
+                let side = Math.floor(Math.random() * 4);
+                let x, y;
+                
+                if (side === 0) { x = -20; y = Math.random() * canvas.height; }
+                else if (side === 1) { x = canvas.width + 20; y = Math.random() * canvas.height; }
+                else if (side === 2) { x = Math.random() * canvas.width; y = -20; }
+                else { x = Math.random() * canvas.width; y = canvas.height + 20; }
+                
+                enemies.push({
+                    x: x,
+                    y: y,
+                    radius: 12,
+                    color: '#f72585',
+                    speed: 2
+                });
+            }
+        }
+
+        // Actualizar tiempo del juego
+        function updateGameTime() {
+            gameTime += 1;
+            
+            // 10 segundos de día = 1 minuto de juego
+            let dayDuration = 600; // 10 minutos en segundos reales
+            let nightDuration = 300; // 5 minutos en segundos reales
+            
+            if (isDay && gameTime % dayDuration === 0) {
+                isDay = false;
+                document.getElementById('day-night-indicator').className = 'night';
+                spawnEnemies();
+            } else if (!isDay && gameTime % nightDuration === 0) {
+                isDay = true;
+                dayCount++;
+                document.getElementById('day-night-indicator').className = 'day';
+                // Eliminar enemigos
+                enemies = [];
+            }
+            
+            updateTimeDisplay();
+        }
+
+        // Actualizar visualización del tiempo
+        function updateTimeDisplay() {
+            let totalSeconds = gameTime % 600;
+            let minutes = Math.floor(totalSeconds / 60);
+            let seconds = totalSeconds % 60;
+            let timeString = `Día: ${dayCount} | ${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+            document.getElementById('time-text').textContent = timeString;
+        }
+
+        // Construir una estructura
+        function craftStructure(type) {
+            let cost = {};
+            let structure = {};
+            
+            switch(type) {
+                case 'wall':
+                    cost = { wood: 10 };
+                    structure = { 
+                        x: player.x, 
+                        y: player.y, 
+                        width: 20, 
+                        height: 40, 
+                        color: '#8a8a8a',
+                        type: 'wall'
+                    };
+                    break;
+                case 'tower':
+                    cost = { wood: 20, stone: 10 };
+                    structure = { 
+                        x: player.x, 
+                        y: player.y, 
+                        width: 40, 
+                        height: 60, 
+                        color: '#5a5a5a',
+                        type: 'tower'
+                    };
+                    break;
+                case 'fire':
+                    cost = { wood: 15, stone: 5 };
+                    structure = { 
+                        x: player.x, 
+                        y: player.y, 
+                        width: 30, 
+                        height: 30, 
+                        color: '#ff8c00',
+                        type: 'fire'
+                    };
+                    break;
+            }
+            
+            // Verificar recursos
+            if (resources.wood >= cost.wood && resources.stone >= (cost.stone || 0)) {
+                resources.wood -= cost.wood;
+                resources.stone -= cost.stone || 0;
+                structures.push(structure);
+                updateResourceDisplay();
+            } else {
+                alert('No tienes suficientes recursos');
+            }
+        }
+
+        // Actualizar visualización de recursos
+        function updateResourceDisplay() {
+            document.getElementById('wood-count').textContent = resources.wood;
+            document.getElementById('stone-count').textContent = resources.stone;
+        }
+
+        // Event listeners
+        window.addEventListener('keydown', (e) => {
+            keys[e.key] = true;
+            
+            // Tecla C para modo construcción
+            if (e.key === 'c' || e.key === 'C') {
+                craftMode = !craftMode;
+                document.getElementById('crafting-menu').style.display = craftMode ? 'block' : 'none';
+            }
+        });
+
+        window.addEventListener('keyup', (e) => {
+            keys[e.key] = false;
+        });
+
+        canvas.addEventListener('mousemove', (e) => {
+            const rect = canvas.getBoundingClientRect();
+            mouse.x = e.clientX - rect.left;
+            mouse.y = e.clientY - rect.top;
+        });
+
+        canvas.addEventListener('mousedown', () => {
+            mouse.down = true;
+        });
+
+        canvas.addEventListener('mouseup', () => {
+            mouse.down = false;
+        });
+
+        // Exponer funciones globales
+        window.craftStructure = craftStructure;
+
+        // Iniciar el juego
+        initGame();
+    </script>
+</body>
+</html>
